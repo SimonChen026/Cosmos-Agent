@@ -39,13 +39,13 @@ Everything stays on your machine: sessions are plain JSON files under `~/Library
 
 ## 📦 Install / 安装
 
-1. Download `Cosmos.dmg`, open it, and drag **Cosmos** into your Applications folder.
+1. Download `Cosmos.dmg` from the latest [GitHub Release](https://github.com/SimonChen026/Cosmos-Agent/releases/latest), open it, and drag **Cosmos** into your Applications folder.
 2. Launch it. On first run, paste one or more API keys — optionally with a base URL for OpenAI-compatible services (e.g. `https://api.deepseek.com`).
 3. Choose a workspace folder in the status bar, and start asking.
 
 <br>
 
-1. 下载 `Cosmos.dmg`，打开后把 **Cosmos** 拖进"应用程序"文件夹。
+1. 从最新 [GitHub Release](https://github.com/SimonChen026/Cosmos-Agent/releases/latest) 下载 `Cosmos.dmg`，打开后把 **Cosmos** 拖进"应用程序"文件夹。
 2. 启动应用。首次运行时贴入一个或多个 API Key —— 如使用 OpenAI 兼容服务，可一并填写 Base URL（例如 `https://api.deepseek.com`）。
 3. 在状态栏选择一个工作区文件夹，然后开始提问。
 
@@ -61,7 +61,7 @@ Everything stays on your machine: sessions are plain JSON files under `~/Library
 swift build              # debug build / 调试构建
 swift run forge-tests    # 48 offline tests — no network, no keys / 48 个离线测试，无需联网或密钥
 scripts/build_app.sh     # release build → dist/Cosmos.app
-scripts/make_dmg.sh      # package → dist/Cosmos.dmg
+scripts/make_dmg.sh      # package → dist/Cosmos.dmg; upload it as a GitHub Release asset
 ```
 
 Requires macOS 14+ and the Xcode Command Line Tools (Swift 6 toolchain). **Zero third-party dependencies.**
