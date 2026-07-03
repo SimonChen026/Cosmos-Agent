@@ -1,0 +1,3 @@
+import ForgeKit
+
+ForgeApp.main()
