@@ -4,6 +4,38 @@ struct ChatView: View {
     @EnvironmentObject var state: AppState
 
     var body: some View {
+        Group {
+            if isHomeLanding {
+                homeLanding
+            } else {
+                standardLayout
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// Home (Chat/Cowork) with no conversation yet and a key already
+    /// present: the greeting, composer, and quick actions center as one
+    /// block instead of the composer pinning to the bottom. Code mode and
+    /// any active conversation keep the standard pinned-composer layout.
+    private var isHomeLanding: Bool {
+        state.settings.mode != .code && state.messages.isEmpty && state.apiKeyPresent
+    }
+
+    private var homeLanding: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            VStack(spacing: 20) {
+                HomeGreeting()
+                InputBar()
+                HomeQuickActions()
+            }
+            .centeredContentColumn()
+            Spacer()
+        }
+    }
+
+    private var standardLayout: some View {
         VStack(spacing: 0) {
             if state.messages.isEmpty {
                 EmptyStateView()
@@ -29,7 +61,6 @@ struct ChatView: View {
                 StatusBar()
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     /// First run (no key, no history): the window shows only the key box.
@@ -48,6 +79,7 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+                .centeredContentColumn()
             }
             .onChange(of: scrollFingerprint) { _, _ in
                 proxy.scrollTo("bottom", anchor: .bottom)

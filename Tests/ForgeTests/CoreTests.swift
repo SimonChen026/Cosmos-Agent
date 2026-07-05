@@ -416,7 +416,7 @@ func coreTests() async {
         guard let json = try? JSONValue.parse(body) else { return fail("body not JSON") }
         expectEqual(json["stream"]?.boolValue, true)
         expectEqual(json["thinking"]?["type"]?.stringValue, "adaptive")
-        expectEqual(json["tools"]?.arrayValue?.count, 9)
+        expectEqual(json["tools"]?.arrayValue?.count, 14)
         let system = json["system"]?.arrayValue?.first
         expectEqual(system?["cache_control"]?["type"]?.stringValue, "ephemeral")
         let lastBlock = json["messages"]?.arrayValue?.last?["content"]?.arrayValue?.last
@@ -467,18 +467,34 @@ func coreTests() async {
 
     // ---- Difficulty routing
 
-    await test("router: regex rules and heuristics") {
-        let rules = RoutingRule.defaults
-        expectEqual(DifficultyRouter.tier(for: "帮我重构一下这个模块的架构", rules: rules), "strong")
-        expectEqual(DifficultyRouter.tier(for: "Refactor the session store for concurrency", rules: rules), "strong")
-        expectEqual(DifficultyRouter.tier(for: "什么是 SSE?", rules: rules), "fast")
-        expectEqual(DifficultyRouter.tier(for: "list the files in src", rules: rules), "fast")
-        expectEqual(
-            DifficultyRouter.tier(for: "please look at this\n```\nlet x = 1\n```", rules: []),
-            "strong", "code fence heuristic")
-        expectEqual(DifficultyRouter.tier(for: "hi", rules: []), "fast", "short heuristic")
-        let medium = String(repeating: "word ", count: 30)
-        expectEqual(DifficultyRouter.tier(for: medium, rules: []), "balanced")
+    await test("router: classify parses tier and multi-agent signal") {
+        let transport = MockTransport([.events(textTurn(#"strong\nyes"#))])
+        let engine = AgentEngine(transport: transport)
+        let judge = Provider(name: "j", kind: "anthropic", baseURL: "u", model: "m",
+                             apiKey: "k", tier: "fast")
+        let result = await DifficultyRouter.classify(message: "refactor this", judge: judge, engine: engine)
+        expectEqual(result.tier, "strong")
+        expect(result.suggestsMultiAgent, "expected suggestsMultiAgent to be true")
+    }
+
+    await test("router: classify falls back to balanced on garbage output") {
+        let transport = MockTransport([.events(textTurn("¯\\_(ツ)_/¯"))])
+        let engine = AgentEngine(transport: transport)
+        let judge = Provider(name: "j", kind: "anthropic", baseURL: "u", model: "m",
+                             apiKey: "k", tier: "fast")
+        let result = await DifficultyRouter.classify(message: "hi", judge: judge, engine: engine)
+        expectEqual(result.tier, "balanced")
+        expect(!result.suggestsMultiAgent, "expected suggestsMultiAgent to be false")
+    }
+
+    await test("router: classify falls back to balanced when the call fails") {
+        let transport = MockTransport([.failure(.badResponse("boom"))])
+        let engine = AgentEngine(transport: transport)
+        let judge = Provider(name: "j", kind: "anthropic", baseURL: "u", model: "m",
+                             apiKey: "k", tier: "fast")
+        let result = await DifficultyRouter.classify(message: "hi", judge: judge, engine: engine)
+        expectEqual(result.tier, "balanced")
+        expect(!result.suggestsMultiAgent, "expected suggestsMultiAgent to be false")
     }
 
     await test("router: tier candidates with fallback") {
@@ -510,6 +526,18 @@ func coreTests() async {
         let decoded = try JSONDecoder().decode([Provider].self, from: Data(legacyJSON.utf8))
         expectEqual(decoded.first?.tier, "balanced")
         expectEqual(decoded.first?.temperature, 1.0)
+    }
+
+    await test("provider: supportsVision heuristic") {
+        let anthropic = Provider(name: "n", kind: "anthropic", baseURL: "u",
+                                  model: "whatever", apiKey: "k")
+        expect(anthropic.supportsVision)
+        let gpt4o = Provider(name: "n", kind: "openai", baseURL: "u",
+                              model: "gpt-4o-mini", apiKey: "k")
+        expect(gpt4o.supportsVision)
+        let deepseek = Provider(name: "n", kind: "openai", baseURL: "u",
+                                 model: "deepseek-chat", apiKey: "k")
+        expect(!deepseek.supportsVision)
     }
 
     await test("sampling: temperature/top_p reach both wire formats") {
@@ -552,7 +580,7 @@ func coreTests() async {
         guard let json = try? JSONValue.parse(body) else { return fail("body not JSON") }
         expectEqual(json["stream"]?.boolValue, true)
         expectEqual(json["stream_options"]?["include_usage"]?.boolValue, true)
-        expectEqual(json["tools"]?.arrayValue?.count, 9)
+        expectEqual(json["tools"]?.arrayValue?.count, 14)
         expectEqual(json["tools"]?.arrayValue?.first?["type"]?.stringValue, "function")
         let sent = json["messages"]?.arrayValue ?? []
         expectEqual(sent.count, 4, "system, user, assistant, tool")
@@ -678,5 +706,69 @@ func coreTests() async {
         let (compacted, note) = await Compaction.compact(messages, config: AgentConfig()) { _ in "S" }
         expectEqual(compacted.count, 2)
         expect(note == nil)
+    }
+
+    // ---- Images (multimodal)
+
+    await test("content block: .image round-trips through Codable") {
+        let block = ContentBlock.image(mediaType: "image/png", base64: "aGVsbG8=")
+        let data = try JSONEncoder().encode(block)
+        let decoded = try JSONDecoder().decode(ContentBlock.self, from: data)
+        expectEqual(decoded, block)
+
+        let message = ChatMessage(role: .user, blocks: [.text("look"), block])
+        let messageData = try JSONEncoder().encode(message)
+        let decodedMessage = try JSONDecoder().decode(ChatMessage.self, from: messageData)
+        expectEqual(decodedMessage.blocks, message.blocks)
+    }
+
+    await test("request body: anthropic image wire shape") {
+        let messages = [
+            ChatMessage(role: .user, blocks: [
+                .image(mediaType: "image/png", base64: "aGVsbG8="),
+                .text("what is this?"),
+            ]),
+        ]
+        let body = RequestBuilder.body(
+            messages: messages, systemPrompt: "s", config: AgentConfig(), tools: [],
+            thinking: false, runMessageIds: [], cache: false)
+        guard let json = try? JSONValue.parse(body) else { return fail("body not JSON") }
+        let content = json["messages"]?.arrayValue?.first?["content"]?.arrayValue ?? []
+        expectEqual(content.count, 2)
+        let imageBlock = content.first { $0["type"]?.stringValue == "image" }
+        expectEqual(imageBlock?["source"]?["type"]?.stringValue, "base64")
+        expectEqual(imageBlock?["source"]?["media_type"]?.stringValue, "image/png")
+        expectEqual(imageBlock?["source"]?["data"]?.stringValue, "aGVsbG8=")
+    }
+
+    await test("openai: image block becomes content-array with image_url") {
+        let messages = [
+            ChatMessage(role: .user, blocks: [
+                .text("what is this?"),
+                .image(mediaType: "image/jpeg", base64: "aGVsbG8="),
+            ]),
+        ]
+        var config = AgentConfig()
+        config.model = "gpt-4o"
+        let body = OpenAIRequestBuilder.body(
+            messages: messages, systemPrompt: "SYS", config: config, tools: [])
+        guard let json = try? JSONValue.parse(body) else { return fail("body not JSON") }
+        let sent = json["messages"]?.arrayValue ?? []
+        let userMessage = sent.first { $0["role"]?.stringValue == "user" }
+        let parts = userMessage?["content"]?.arrayValue ?? []
+        expectEqual(parts.count, 2, "text + image parts")
+        expectEqual(parts.first?["type"]?.stringValue, "text")
+        expectEqual(parts.first?["text"]?.stringValue, "what is this?")
+        let imagePart = parts.last
+        expectEqual(imagePart?["type"]?.stringValue, "image_url")
+        expectEqual(imagePart?["image_url"]?["url"]?.stringValue, "data:image/jpeg;base64,aGVsbG8=")
+
+        // Text-only messages must keep the plain-string content path.
+        let textOnly = OpenAIRequestBuilder.body(
+            messages: [ChatMessage(role: .user, blocks: [.text("hi")])],
+            systemPrompt: "SYS", config: config, tools: [])
+        guard let textJSON = try? JSONValue.parse(textOnly) else { return fail("body not JSON") }
+        let textUser = textJSON["messages"]?.arrayValue?.first { $0["role"]?.stringValue == "user" }
+        expect(textUser?["content"]?.stringValue == "hi", "plain-string path unchanged")
     }
 }

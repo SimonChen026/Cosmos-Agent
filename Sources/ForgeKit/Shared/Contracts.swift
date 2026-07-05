@@ -21,13 +21,15 @@ enum ContentBlock: Equatable, Sendable {
     case thinking(String, signature: String?)
     case toolUse(id: String, name: String, input: JSONValue)
     case toolResult(toolUseId: String, content: String, isError: Bool)
+    /// `base64` is raw base64 bytes (no data-URI prefix); `mediaType` e.g. "image/png".
+    case image(mediaType: String, base64: String)
 }
 
 extension ContentBlock: Codable {
     private enum CodingKeys: String, CodingKey {
-        case kind, text, signature, id, name, input, toolUseId, content, isError
+        case kind, text, signature, id, name, input, toolUseId, content, isError, mediaType, base64
     }
-    private enum Kind: String, Codable { case text, thinking, toolUse, toolResult }
+    private enum Kind: String, Codable { case text, thinking, toolUse, toolResult, image }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -50,6 +52,11 @@ extension ContentBlock: Codable {
                 toolUseId: try c.decode(String.self, forKey: .toolUseId),
                 content: try c.decode(String.self, forKey: .content),
                 isError: try c.decodeIfPresent(Bool.self, forKey: .isError) ?? false
+            )
+        case .image:
+            self = .image(
+                mediaType: try c.decode(String.self, forKey: .mediaType),
+                base64: try c.decode(String.self, forKey: .base64)
             )
         }
     }
@@ -74,6 +81,10 @@ extension ContentBlock: Codable {
             try c.encode(toolUseId, forKey: .toolUseId)
             try c.encode(content, forKey: .content)
             try c.encode(isError, forKey: .isError)
+        case .image(let mediaType, let base64):
+            try c.encode(Kind.image, forKey: .kind)
+            try c.encode(mediaType, forKey: .mediaType)
+            try c.encode(base64, forKey: .base64)
         }
     }
 }
@@ -119,6 +130,41 @@ enum PermissionClass: String, Codable, Sendable {
     case write
     /// Executes arbitrary code — gated behind approval.
     case execute
+}
+
+/// The five agent permission tiers, mirroring Claude Code's own permission
+/// modes — from never writing/executing up through skipping every prompt.
+enum PermissionLevel: String, Codable, CaseIterable, Sendable {
+    case readOnly
+    case askEveryTime
+    case acceptEdits
+    case acceptAll
+    case bypassAll
+
+    var label: String {
+        switch self {
+        case .readOnly: return "Read Only"
+        case .askEveryTime: return "Ask Every Time"
+        case .acceptEdits: return "Accept Edits"
+        case .acceptAll: return "Accept All"
+        case .bypassAll: return "Bypass Permissions"
+        }
+    }
+
+    var caption: String {
+        switch self {
+        case .readOnly:
+            return "The agent can look around but never writes files or runs commands."
+        case .askEveryTime:
+            return "Every write or command asks first (current default)."
+        case .acceptEdits:
+            return "File edits run automatically; commands still ask."
+        case .acceptAll:
+            return "Edits and commands run automatically; clearly dangerous commands (sudo, rm -rf, force-push, etc.) still ask."
+        case .bypassAll:
+            return "Everything runs automatically, including dangerous commands. Use with caution."
+        }
+    }
 }
 
 struct ToolSpec: Sendable {
@@ -221,8 +267,14 @@ struct Provider: Codable, Equatable, Sendable, Identifiable {
 
     /// Builds a provider from a pasted key, auto-detecting the format.
     /// Optional overrides apply when the user supplied an endpoint/model.
-    static func detect(fromKey key: String, baseURL: String? = nil,
-                       model: String? = nil) -> Provider {
+    /// All inputs are trimmed so stray whitespace/newlines never reach the
+    /// API (a common cause of "unsupported model" errors).
+    static func detect(fromKey rawKey: String, baseURL rawBase: String? = nil,
+                       model rawModel: String? = nil) -> Provider {
+        let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = rawBase?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = rawModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+
         var provider: Provider
         if key.hasPrefix("sk-ant-") {
             provider = Provider(name: "Anthropic", kind: "anthropic",
@@ -233,10 +285,16 @@ struct Provider: Codable, Equatable, Sendable, Identifiable {
                                 baseURL: "https://api.openai.com/v1",
                                 model: "gpt-4o", apiKey: key)
         }
-        if let baseURL, !baseURL.isEmpty, provider.kind == "openai" {
-            provider.baseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
-            if let host = URL(string: provider.baseURL)?.host {
-                provider.name = host.replacingOccurrences(of: "api.", with: "")
+        if let base, !base.isEmpty, provider.kind == "openai" {
+            provider.baseURL = base.hasSuffix("/") ? String(base.dropLast()) : base
+            let host = (URL(string: provider.baseURL)?.host ?? provider.baseURL).lowercased()
+            provider.name = host.replacingOccurrences(of: "api.", with: "")
+            // Infer a sensible default model from the endpoint when the user
+            // didn't name one — prevents "you must set a model" round-trips.
+            if model?.isEmpty ?? true {
+                if host.contains("deepseek") { provider.model = "deepseek-chat" }
+                else if host.contains("moonshot") || host.contains("kimi") { provider.model = "moonshot-v1-8k" }
+                else if host.contains("openai") { provider.model = "gpt-4o" }
             }
         }
         if let model, !model.isEmpty {
@@ -244,29 +302,15 @@ struct Provider: Codable, Equatable, Sendable, Identifiable {
         }
         return provider
     }
-}
 
-/// One difficulty-routing rule: if `pattern` (regex) matches the user's
-/// message, the run is routed to a provider of `tier`.
-struct RoutingRule: Codable, Equatable, Sendable, Identifiable {
-    var id: UUID
-    var pattern: String
-    var tier: String
-
-    init(id: UUID = UUID(), pattern: String, tier: String) {
-        self.id = id
-        self.pattern = pattern
-        self.tier = tier
+    /// Best-effort heuristic, not exhaustive: OpenAI-compatible endpoints
+    /// don't expose a capability flag, so we guess from the model name.
+    var supportsVision: Bool {
+        if kind == "anthropic" { return true }
+        let m = model.lowercased()
+        return ["gpt-4o", "gpt-4.1", "gpt-5", "vision", "gemini", "qwen-vl", "glm-4v", "claude"]
+            .contains(where: m.contains)
     }
-
-    static let defaults: [RoutingRule] = [
-        RoutingRule(
-            pattern: #"(?i)(refactor|architect|design|debug|optimi[sz]e|race condition|deadlock|security|vulnerab|prove|algorithm|complexit|migrat|concurren|重构|架构|设计|调试|优化|并发|死锁|安全|算法|证明|迁移|复杂)"#,
-            tier: "strong"),
-        RoutingRule(
-            pattern: #"(?i)^\s*(what|who|when|where|list|show|print|read|cat|explain|translate|rename|typo|summari|什么|谁|哪|列出|看看|读一?下|翻译|解释|改名|总结)"#,
-            tier: "fast"),
-    ]
 }
 
 /// Optional structured payload so the UI can render rich cards (diffs etc.).
@@ -275,6 +319,19 @@ enum DisplayHint: Equatable, Sendable, Codable {
     case fileContent(path: String)
     case commandOutput(command: String)
     case todoList(items: [TodoItem])
+    case artifact(id: String, title: String, kind: String, language: String?, content: String)
+}
+
+/// A named, standalone piece of model-produced content (code, a document, an
+/// SVG, HTML, a Mermaid diagram) shown in the dedicated artifact panel rather
+/// than only inline in the chat.
+struct Artifact: Identifiable, Equatable, Sendable {
+    var id: String
+    var title: String
+    var kind: String
+    var language: String?
+    var content: String
+    var updatedAt: Date
 }
 
 struct ToolOutput: Sendable {
@@ -389,10 +446,15 @@ struct SessionRecord: Codable, Identifiable, Equatable, Sendable {
     var workspaceRoot: String
     var model: String
     var messages: [ChatMessage]
+    /// Set once the user renames the session; when present it wins over the
+    /// auto-derived (first-message) title on every future save. Optional so
+    /// older session files (saved before rename existed) decode as nil —
+    /// no migration needed.
+    var customTitle: String? = nil
 
     init(id: UUID = UUID(), title: String = "New Session", createdAt: Date = Date(),
          updatedAt: Date = Date(), workspaceRoot: String, model: String,
-         messages: [ChatMessage] = []) {
+         messages: [ChatMessage] = [], customTitle: String? = nil) {
         self.id = id
         self.title = title
         self.createdAt = createdAt
@@ -400,6 +462,7 @@ struct SessionRecord: Codable, Identifiable, Equatable, Sendable {
         self.workspaceRoot = workspaceRoot
         self.model = model
         self.messages = messages
+        self.customTitle = customTitle
     }
 }
 
@@ -419,14 +482,38 @@ protocol KeychainProtocol: Sendable {
     func setProvidersData(_ data: Data) throws
 }
 
+// MARK: - App mode
+
+/// Top-level mode switcher for the main window (foundational plumbing only —
+/// mode-specific content lands in a later task).
+enum AppMode: String, Codable, CaseIterable, Sendable {
+    case cowork, chat, code
+
+    var label: String {
+        switch self {
+        case .cowork: return "Cowork"
+        case .chat: return "Chat"
+        case .code: return "Code"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .cowork: return "person.2.badge.gearshape"
+        case .chat: return "bubble.left.and.bubble.right"
+        case .code: return "chevron.left.forwardslash.chevron.right"
+        }
+    }
+}
+
 // MARK: - Model catalogue
 
 enum ModelCatalog {
-    static let models: [(id: String, label: String)] = [
-        ("claude-sonnet-5", "Sonnet 5"),
-        ("claude-opus-4-8", "Opus 4.8"),
-        ("claude-fable-5", "Fable 5"),
-        ("claude-haiku-4-5-20251001", "Haiku 4.5"),
+    static let models: [(id: String, label: String, vision: Bool)] = [
+        ("claude-sonnet-5", "Sonnet 5", true),
+        ("claude-opus-4-8", "Opus 4.8", true),
+        ("claude-fable-5", "Fable 5", true),
+        ("claude-haiku-4-5-20251001", "Haiku 4.5", true),
     ]
     static let defaultModel = "claude-sonnet-5"
 }

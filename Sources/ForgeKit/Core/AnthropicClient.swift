@@ -270,6 +270,15 @@ enum RequestBuilder {
                 ]
                 if isError { object["is_error"] = .bool(true) }
                 return .object(object)
+            case .image(let mediaType, let base64):
+                return .object([
+                    "type": "image",
+                    "source": .object([
+                        "type": "base64",
+                        "media_type": .string(mediaType),
+                        "data": .string(base64),
+                    ]),
+                ])
             }
         }
     }

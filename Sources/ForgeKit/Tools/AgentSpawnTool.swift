@@ -48,10 +48,10 @@ struct AgentSpawnTool: AgentTool {
         let provider = Self.rotor.next(from: pool)
 
         var config = AgentConfig()
-        config.apiKey = provider.apiKey
-        config.model = provider.model
+        config.apiKey = provider.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.model = provider.model.trimmingCharacters(in: .whitespacesAndNewlines)
         config.providerKind = provider.kind
-        config.baseURL = provider.baseURL
+        config.baseURL = provider.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         config.temperature = provider.temperature
         config.topP = provider.topP
         config.maxTokens = provider.maxTokens

@@ -45,6 +45,8 @@ enum Util {
                 case .toolUse(_, let name, let input):
                     total += estimateTokens(name) + estimateTokens(input.encodedString())
                 case .toolResult(_, let content, _): total += estimateTokens(content)
+                // Rough flat estimate — vision tokenization doesn't map to text bytes.
+                case .image: total += 1_600
                 }
             }
             total += 8 // per-message overhead

@@ -87,6 +87,8 @@ enum Compaction {
                     lines.append("[tool] \(name)(\(input.encodedString().prefix(120)))")
                 case .toolResult(_, let content, let isError):
                     lines.append("[result\(isError ? " ERROR" : "")] \(content.prefix(150))")
+                case .image:
+                    lines.append("[\(message.role.rawValue)] [image attached]")
                 }
             }
         }

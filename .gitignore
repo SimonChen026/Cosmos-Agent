@@ -2,18 +2,3 @@
 dist/
 .DS_Store
 .swiftpm/
-
-# Local secrets and signing material.
-.env
-.env.*
-*.pem
-*.key
-*.p12
-*.pfx
-*.mobileprovision
-*.xcconfig
-
-# Release artifacts belong in GitHub Release assets, not source history.
-*.dmg
-*.app
-*.xcarchive

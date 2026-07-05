@@ -17,6 +17,7 @@ public struct ForgeApp: App {
             RootView()
                 .environmentObject(state)
                 .frame(minWidth: 900, minHeight: 600)
+                .preferredColorScheme(colorScheme(for: state.settings.appearance))
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -28,6 +29,16 @@ public struct ForgeApp: App {
         Settings {
             SettingsView()
                 .environmentObject(state)
+        }
+    }
+
+    /// Maps the persisted "system" | "light" | "dark" string to the
+    /// SwiftUI color scheme override — nil means "follow the system".
+    private func colorScheme(for appearance: String) -> ColorScheme? {
+        switch appearance {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
         }
     }
 }

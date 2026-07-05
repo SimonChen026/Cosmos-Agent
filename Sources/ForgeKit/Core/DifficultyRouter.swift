@@ -1,21 +1,68 @@
 import Foundation
 
-/// Regex-based difficulty classifier: routes a user message to a provider
-/// tier. Rules run in order, first match wins; when nothing matches, cheap
-/// heuristics (code fences, message length) decide.
+/// LLM-judge difficulty classifier: makes a cheap classification call
+/// through the weakest configured model to decide which provider tier
+/// should handle the real turn, and whether the request looks like
+/// independent sub-tasks worth delegating to the agent tool.
 enum DifficultyRouter {
 
-    static func tier(for text: String, rules: [RoutingRule]) -> String {
-        let range = NSRange(text.startIndex..., in: text)
-        for rule in rules {
-            guard let regex = try? NSRegularExpression(pattern: rule.pattern) else { continue }
-            if regex.firstMatch(in: text, range: range) != nil {
-                return rule.tier
+    /// Trivial approval broker for the classification call: it never
+    /// requests tools (the judge request carries none), so this is never
+    /// actually invoked.
+    private struct DenyAllBroker: ApprovalBroker {
+        func requestApproval(toolName: String, summary: String, input: JSONValue) async -> ApprovalDecision {
+            .deny
+        }
+    }
+
+    /// Classifies `message` using `judge` (expected to be the fastest
+    /// configured provider) via the same engine pipeline the main chat
+    /// uses. Never throws and never blocks the caller indefinitely on a
+    /// bad response — any failure or unparsable output falls back to
+    /// ("balanced", false) so a slow/broken judge call can never stall or
+    /// break the user's real turn.
+    static func classify(message: String, judge: Provider, engine: any AgentEngineProtocol) async -> (tier: String, suggestsMultiAgent: Bool) {
+        var config = AgentConfig()
+        config.apiKey = judge.apiKey
+        config.model = judge.model
+        config.providerKind = judge.kind
+        config.baseURL = judge.baseURL
+        config.temperature = judge.temperature
+        config.topP = judge.topP
+        config.maxTokens = 60
+        config.maxTurns = 1
+        config.thinkingMode = "off"
+
+        let prompt = """
+        Classify the difficulty of this user request and whether it looks like independent sub-tasks that could be delegated to parallel agents. Reply with EXACTLY two lines, nothing else: line 1 is one word — fast, balanced, or strong; line 2 is yes or no.
+
+        Request:
+        \(message)
+        """
+        let request = AgentRunRequest(
+            messages: [ChatMessage(role: .user, blocks: [.text(prompt)])],
+            systemPrompt: "You are a fast triage classifier. Follow the requested two-line output format exactly, no extra words.",
+            config: config,
+            tools: [],
+            session: ToolSessionState(),
+            providers: []
+        )
+
+        var reply = ""
+        for await event in engine.run(request, approval: DenyAllBroker()) {
+            if case .runFinished(let messages, _) = event {
+                reply = messages.last(where: { $0.role == .assistant })?.plainText ?? ""
             }
         }
-        if text.contains("```") || text.count > 500 { return "strong" }
-        if text.count < 60 { return "fast" }
-        return "balanced"
+
+        let lower = reply.lowercased()
+        let tier: String
+        if lower.contains("strong") { tier = "strong" }
+        else if lower.contains("fast") { tier = "fast" }
+        else if lower.contains("balanced") { tier = "balanced" }
+        else { tier = "balanced" }
+        let suggestsMultiAgent = lower.contains("yes")
+        return (tier, suggestsMultiAgent)
     }
 
     /// Providers of the requested tier, falling back to the nearest tier

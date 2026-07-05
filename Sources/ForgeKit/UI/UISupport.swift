@@ -14,9 +14,10 @@ import AppKit
 struct ModelChoice: Identifiable {
     let id: String
     let label: String
+    let vision: Bool
 
     static let all: [ModelChoice] = ModelCatalog.models.map {
-        ModelChoice(id: $0.id, label: $0.label)
+        ModelChoice(id: $0.id, label: $0.label, vision: $0.vision)
     }
 
     static func label(for id: String) -> String {
@@ -40,7 +41,12 @@ enum ToolPresentation {
         case "grep": return "magnifyingglass"
         case "bash": return "terminal"
         case "todo_write": return "checklist"
+        case "create_artifact": return "puzzlepiece.extension"
         case "agent": return "person.2.fill"
+        case "create_docx": return "doc.richtext"
+        case "create_pptx": return "rectangle.on.rectangle"
+        case "create_xlsx": return "tablecells"
+        case "web_search": return "magnifyingglass.circle"
         default: return "wrench.and.screwdriver"
         }
     }
@@ -55,7 +61,12 @@ enum ToolPresentation {
         case "grep": return "Grep"
         case "bash": return "Shell"
         case "todo_write": return "Todos"
+        case "create_artifact": return "Artifact"
         case "agent": return "Agent"
+        case "create_docx": return "Word Doc"
+        case "create_pptx": return "Slides"
+        case "create_xlsx": return "Spreadsheet"
+        case "web_search": return "Web Search"
         default: return name
         }
     }
@@ -84,8 +95,21 @@ enum ToolPresentation {
         case "todo_write":
             let n = input["items"]?.arrayValue?.count ?? 0
             return "\(n) item\(n == 1 ? "" : "s")"
+        case "create_artifact":
+            return input["title"]?.stringValue ?? "untitled artifact"
         case "agent":
             return String((input["task"]?.stringValue ?? "…").prefix(70))
+        case "create_docx":
+            let n = input["paragraphs"]?.arrayValue?.count ?? 0
+            return (displayPath("path") ?? "…") + "  (\(n) paragraph\(n == 1 ? "" : "s"))"
+        case "create_pptx":
+            let n = input["slides"]?.arrayValue?.count ?? 0
+            return (displayPath("path") ?? "…") + "  (\(n) slide\(n == 1 ? "" : "s"))"
+        case "create_xlsx":
+            let n = input["rows"]?.arrayValue?.count ?? 0
+            return (displayPath("path") ?? "…") + "  (\(n) row\(n == 1 ? "" : "s"))"
+        case "web_search":
+            return input["query"]?.stringValue ?? "…"
         default:
             return String(input.encodedString().prefix(80))
         }

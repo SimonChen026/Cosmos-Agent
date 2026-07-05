@@ -15,10 +15,16 @@ struct StatusBar: View {
             .buttonStyle(.plain)
             .help("Workspace — click to change")
 
-            if state.settings.autoApprove {
-                Label("Auto-approve", systemImage: "bolt.fill")
-                    .foregroundStyle(.orange)
-                    .help("All tool calls run without asking (Settings)")
+            if state.activeProvider == nil {
+                Divider().frame(height: 12)
+                Button {
+                    state.showingSettings = true
+                } label: {
+                    Label("No provider", systemImage: "cpu")
+                        .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+                .help("No API key configured — click to open Settings")
             }
 
             Spacer()
@@ -31,6 +37,7 @@ struct StatusBar: View {
         .font(.caption)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .centeredContentColumn()
         .background(.bar)
     }
 

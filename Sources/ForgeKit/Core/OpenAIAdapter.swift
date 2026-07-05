@@ -53,6 +53,7 @@ enum OpenAIRequestBuilder {
         case .user:
             var out: [JSONValue] = []
             var texts: [String] = []
+            var images: [JSONValue] = []
             for block in message.blocks {
                 switch block {
                 case .toolResult(let toolUseId, let content, let isError):
@@ -63,11 +64,28 @@ enum OpenAIRequestBuilder {
                     ]))
                 case .text(let text) where !text.isEmpty:
                     texts.append(text)
+                case .image(let mediaType, let base64):
+                    images.append(.object([
+                        "type": "image_url",
+                        "image_url": .object([
+                            "url": .string("data:\(mediaType);base64,\(base64)"),
+                        ]),
+                    ]))
                 default:
                     break
                 }
             }
-            if !texts.isEmpty {
+            if !images.isEmpty {
+                var parts: [JSONValue] = []
+                if !texts.isEmpty {
+                    parts.append(.object(["type": "text", "text": .string(texts.joined(separator: "\n"))]))
+                }
+                parts.append(contentsOf: images)
+                out.append(.object([
+                    "role": "user",
+                    "content": .array(parts),
+                ]))
+            } else if !texts.isEmpty {
                 out.append(.object([
                     "role": "user",
                     "content": .string(texts.joined(separator: "\n")),

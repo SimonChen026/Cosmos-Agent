@@ -15,5 +15,10 @@ func makeSubagentTools() -> [any AgentTool] {
         GrepTool(),
         BashTool(),
         TodoTool(),
+        ArtifactTool(),
+        DocxTool(),
+        PptxTool(),
+        XlsxTool(),
+        WebSearchTool(),
     ]
 }

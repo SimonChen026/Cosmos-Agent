@@ -87,8 +87,8 @@ private struct ProseView: View {
             inline(String(trimmed.dropFirst(2))).font(.title2.bold())
         } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
             HStack(alignment: .top, spacing: 6) {
-                Text("•")
-                inline(String(trimmed.dropFirst(2)))
+                Text("•").font(.proseBody)
+                inline(String(trimmed.dropFirst(2))).font(.proseBody)
             }
             .padding(.leading, 8)
         } else if trimmed.hasPrefix("> ") {
@@ -96,10 +96,10 @@ private struct ProseView: View {
                 RoundedRectangle(cornerRadius: 1)
                     .fill(Color.secondary.opacity(0.5))
                     .frame(width: 3)
-                inline(String(trimmed.dropFirst(2))).foregroundStyle(.secondary)
+                inline(String(trimmed.dropFirst(2))).font(.proseBody).foregroundStyle(.secondary)
             }
         } else {
-            inline(line)
+            inline(line).font(.proseBody)
         }
     }
 
@@ -114,7 +114,7 @@ private struct ProseView: View {
     }
 }
 
-private struct CodeBlockView: View {
+struct CodeBlockView: View {
     let code: String
     let language: String
     @State private var hovering = false

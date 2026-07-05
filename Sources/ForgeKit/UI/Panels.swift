@@ -136,6 +136,8 @@ struct EmptyStateView: View {
 
     var body: some View {
         if state.apiKeyPresent {
+            // Chat/Cowork with a key present land on ChatView's centered
+            // Home landing instead, so this is reached only for Code mode.
             ReadyEmptyState()
         } else {
             KeyOnboardingView()
@@ -154,49 +156,69 @@ struct KeyOnboardingView: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             Spacer()
-            Image(systemName: "moon.stars.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(Color.accentColor)
-            Text("Cosmos")
-                .font(.largeTitle.bold())
-            Text("Paste your API keys to get started.")
-                .foregroundStyle(.secondary)
-            VStack(spacing: 8) {
-                TextField("sk-ant-…  /  sk-…   (one key per line)",
+            VStack(spacing: 10) {
+                Image(systemName: "moon.stars.fill")
+                    .font(.system(size: 52))
+                    .foregroundStyle(Color.cosmos)
+                Text("Welcome to Cosmos")
+                    .font(.system(size: 26, weight: .bold))
+                Text("Paste an API key to begin. Everything runs on this Mac.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("API KEYS")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                TextField("sk-ant-…   or   sk-…      (one key per line)",
                           text: $keyDraft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12, design: .monospaced))
-                    .lineLimit(3...8)
+                    .font(.system(size: 13, design: .monospaced))
+                    .lineLimit(3...6)
                     .padding(10)
-                    .frame(width: 440)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(nsColor: .textBackgroundColor)))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Color(nsColor: .separatorColor)))
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color(nsColor: .textBackgroundColor)))
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(Theme.hairline))
                     .focused($focused)
+
+                Text("FOR OPENAI-COMPATIBLE KEYS (OPTIONAL)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
                 HStack(spacing: 8) {
-                    TextField("Base URL — e.g. https://api.deepseek.com (optional)",
-                              text: $urlDraft)
+                    TextField("Base URL — e.g. https://api.deepseek.com", text: $urlDraft)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
-                    TextField("Model (optional)", text: $modelDraft)
+                    TextField("Model — e.g. deepseek-chat", text: $modelDraft)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
-                        .frame(width: 150)
+                        .frame(width: 190)
                 }
-                .frame(width: 440)
-                Button("Save Keys") { save() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Text("An Anthropic key adds every Claude model automatically. For others, enter a single model id (not a description) — or leave blank to auto-fill a default (DeepSeek → deepseek-chat). Add more models per key anytime in Settings.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+
+                Button {
+                    save()
+                } label: {
+                    Text("Save & Start").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .padding(.top, 4)
             }
-            Text("Anthropic (sk-ant-…) and OpenAI-compatible keys are auto-detected;\nBase URL and model apply to OpenAI-format keys. Stored in the macOS Keychain — everything stays on this Mac.")
+            .frame(width: 460)
+            .cosmosCard(cornerRadius: 14, padding: 16)
+
+            Label("Keys are stored in the macOS Keychain. Manage providers anytime from the gear icon.",
+                  systemImage: "lock.shield")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -228,7 +250,7 @@ struct ReadyEmptyState: View {
             Spacer()
             Image(systemName: "moon.stars.fill")
                 .font(.system(size: 56))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.cosmos)
             Text("Cosmos")
                 .font(.largeTitle.bold())
             Text("Choose a workspace below, then ask for anything.")

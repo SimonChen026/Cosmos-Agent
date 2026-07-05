@@ -11,6 +11,7 @@ await coreTests()
 
 suite("Tools")
 await toolsTests()
+await newToolsTests()
 
 suite("Infra")
 await infraTests()

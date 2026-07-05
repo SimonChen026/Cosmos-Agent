@@ -50,6 +50,8 @@ func buildSystemPrompt(workspaceRoot: String, model: String) -> String {
     in one message so they run in parallel on different API keys. Each task must be \
     self-contained: subagents cannot see this conversation.
     - If a tool call fails, read the error and adapt — do not repeat the same call unchanged.
+    - Use create_docx/create_pptx/create_xlsx to produce real Word/PowerPoint/Excel files, \
+    and web_search to look things up online when you need current or external information.
     - When done, summarize what changed in a sentence or two. If tests or builds failed, \
     say so plainly with the relevant output.
 
